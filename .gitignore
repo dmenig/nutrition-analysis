@@ -1,0 +1,8 @@
+# Python
+env/
+__pycache__/
+*.pyc
+
+# Generated files
+metabolism_analysis.csv
+metabolism_over_time.png 
