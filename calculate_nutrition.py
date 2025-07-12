@@ -1,151 +1,111 @@
-import pandas as pd
 import json
-from asteval import Interpreter
-import argparse
-import unicodedata
 import re
+from unidecode import unidecode
+from nutrient import Nutrient
 
 
-class Nutrients:
-    """A helper class to manage and calculate nutritional values for food items."""
+class FormulaParser:
+    def __init__(self, nutrition_data_path="nutrition_data.json"):
+        with open(nutrition_data_path, "r") as f:
+            self.nutrition_data = json.load(f)
+        self.normalization_map = {
+            self._normalize(k): k for k in self.nutrition_data.keys()
+        }
 
-    def __init__(self, values=None):
-        if values and isinstance(values, dict):
-            self.values = {k: v if pd.notna(v) else 0 for k, v in values.items()}
-        else:
-            self.values = {}
+    def _normalize(self, s):
+        # Convert to lowercase, replace underscores and apostrophes with spaces, then remove accents and strip whitespace
+        s = s.lower()
+        s = s.replace("_", " ")
+        s = s.replace("'", " ")
+        s = s.strip()
+        return unidecode(s)
 
-    def __add__(self, other):
-        """Adds nutritional values of two food items."""
-        if not isinstance(other, Nutrients):
-            raise TypeError(
-                f"Unsupported operand type(s) for +: 'Nutrients' and '{type(other).__name__}'"
-            )
-        new_values = self.values.copy()
-        for key, val in other.values.items():
-            new_values[key] = new_values.get(key, 0) + val
-        return Nutrients(new_values)
+    def _parse_and_prepare_formula(self, formula_str: str):
+        # 1. Pre-processing
+        # Convert comma decimals to dots
+        formula = re.sub(r"(\d),(\d)", r"\1.\2", formula_str)
+        # Add spaces around operators to ease parsing
+        formula = re.sub(r"([*\/+\-\(\)])", r" \1 ", formula)
+        # Handle implicit multiplication like "2(..." or "2x..."
+        formula = re.sub(r"(\d)\s*([a-zA-Z\(])", r"\1 * \2", formula)
+        formula = re.sub(r"(\))\s*([a-zA-Z\(])", r"\1 * \2", formula)
+        formula = re.sub(r"(\))\s*(\d)", r"\1 * \2", formula)
+        # Collapse multiple spaces
+        formula = re.sub(r"\s+", " ", formula).strip()
 
-    def __mul__(self, scalar):
-        """Multiplies nutritional values by a scalar."""
-        if not isinstance(scalar, (int, float)):
-            raise TypeError(
-                f"Unsupported operand type(s) for *: 'Nutrients' and '{type(scalar).__name__}'"
-            )
-        new_values = {key: val * scalar for key, val in self.values.items()}
-        return Nutrients(new_values)
+        # 2. Tokenization and variable extraction
+        # Find all words that could be food names
+        all_words = set(re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", formula))
 
-    def __rmul__(self, scalar):
-        """Handles right-multiplication."""
-        return self.__mul__(scalar)
+        # Define a list of special terms that should not be prefixed with 'food_'
+        special_terms = {
+            "prot",
+            "creatine",
+            "eau",
+            "ksel",
+            "gainer",
+            "WEIGHT",
+            "RUNNING_CALORIES",
+            "WALKING_CALORIES",
+            "CYCLING_CALORIES",
+            "weight_lifting",
+        }
 
-    def __truediv__(self, scalar):
-        """Divides nutritional values by a scalar."""
-        if not isinstance(scalar, (int, float)) or scalar == 0:
-            return self
-        new_values = {key: val / scalar for key, val in self.values.items()}
-        return Nutrients(new_values)
+        food_vars_map = {}
+        pythonic_formula = formula
 
-    def __repr__(self):
-        """Provides a string representation of the nutritional values."""
-        return f"Nutrients({self.values})"
+        # Sort words by length in reverse order to handle longer names first
+        sorted_words = sorted(list(all_words), key=len, reverse=True)
 
+        for word in sorted_words:
+            if word in special_terms:
+                # If it's a special term, use it directly without 'food_' prefix
+                var_name = word
+            else:
+                # Otherwise, prefix with 'food_'
+                var_name = f"food_{word}"
 
-def normalize_key(key):
-    """Normalizes a food name to a formula-friendly identifier."""
-    # NFD form separates base characters from diacritics
-    nfkd_form = unicodedata.normalize("NFD", key.lower())
-    # remove diacritics
-    normalized = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-    # replace spaces and other separators with underscores
-    return normalized.replace(" ", "_").replace("-", "_")
-
-
-def calculate_nutrition_for_day(date_str, journal_file, nutrition_file):
-    """
-    Calculates the total nutritional intake for a specific day from the journal.
-    This version uses the variable substitution strategy.
-    """
-    try:
-        df = pd.read_csv(journal_file)
-        with open(nutrition_file, "r", encoding="utf-8") as f:
-            nutrition_data = json.load(f)
-    except FileNotFoundError as e:
-        return f"Error: Could not find a required file. {e}"
-
-    # Create a lookup table with normalized keys
-    normalized_nutrition_data = {normalize_key(k): v for k, v in nutrition_data.items()}
-
-    df["Date"] = pd.to_datetime(df["Date"])
-    day_data = df[df["Date"] == pd.to_datetime(date_str)]
-
-    if day_data.empty:
-        return f"No data found for date: {date_str}"
-
-    formula = day_data["Food"].iloc[0]
-
-    if not isinstance(formula, str):
-        if pd.isna(formula):
-            return {"Calories / 100g": 0}
-        return {"Calories / 100g": float(formula)}
-
-    # Standardize the formula
-    formula = formula.replace(",", ".").lower()
-
-    # Find all unique food names in the formula
-    food_names = set(re.findall(r"[a-z_é]+", formula))
-
-    aeval = Interpreter()
-
-    # Create the pythonic formula and populate the symbol table
-    pythonic_formula = formula
-    for food_name in food_names:
-        normalized_name = normalize_key(food_name)
-        if normalized_name in normalized_nutrition_data:
-            # Create a safe variable name for the symbol table
-            var_name = f"food_{normalized_name}"
+            # Replace the word in the formula with its corresponding variable name
+            # Use word boundaries to avoid replacing parts of words
             pythonic_formula = re.sub(
-                r"\b" + re.escape(food_name) + r"\b", var_name, pythonic_formula
+                r"\b" + re.escape(word) + r"\b", var_name, pythonic_formula
             )
-            aeval.symtable[var_name] = Nutrients(
-                normalized_nutrition_data[normalized_name]
+
+            if var_name not in food_vars_map:
+                food_vars_map[var_name] = word  # Store original word for lookup
+
+        return pythonic_formula, food_vars_map
+
+    def calculate_nutrition_for_day(self, formula, date_str):
+        pythonic_formula = ""
+        missing_foods = []
+        pythonic_formula, food_vars_map = self._parse_and_prepare_formula(formula)
+
+        # Create a dictionary of food items for the current formula
+        eval_context = {}
+        for var_name, original_name in food_vars_map.items():
+            normalized_name = self._normalize(original_name)
+
+            if normalized_name in self.normalization_map:
+                db_key = self.normalization_map[normalized_name]
+                eval_context[var_name] = Nutrient(self.nutrition_data[db_key])
+            else:
+                # This food is not in our database, raise an error as requested
+                raise ValueError(
+                    f"Nutrition data for food '{original_name}' (normalized: '{normalized_name}') not found in database."
+                )
+
+        # Add Nutrient class to context to handle cases where formula starts with a nutrient, e.g. Nutrient({...})
+        eval_context["Nutrient"] = Nutrient
+
+        # Evaluate the formula
+        total_nutrition = eval(pythonic_formula, {"__builtins__": None}, eval_context)
+
+        # If we had missing foods, set a flag on the nutrition object
+        if missing_foods:
+            total_nutrition.missing_foods = missing_foods
+            print(
+                f"Note: Used default nutrition values for missing foods on {date_str}: {', '.join(missing_foods)}"
             )
-        else:
-            # If a food is not found, we can't evaluate the formula
-            return f"Error: Food '{food_name}' not found in nutrition data."
 
-    try:
-        result_nutrients = aeval.eval(pythonic_formula)
-        if isinstance(result_nutrients, Nutrients):
-            return result_nutrients.values
-        else:
-            # This should now only happen for formulas that are just a number
-            return {"Calories / 100g": float(result_nutrients)}
-    except Exception as e:
-        return f"Could not evaluate formula for {date_str}. Error: {e}"
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Calculate nutritional intake for a specific day."
-    )
-    parser.add_argument(
-        "date", type=str, help="The date to analyze (format: YYYY-MM-DD)."
-    )
-    args = parser.parse_args()
-
-    journal_file = "journal_food_sport_weight_from_2024-06-30.csv"
-    nutrition_file = "nutrition_data.json"
-
-    daily_totals = calculate_nutrition_for_day(args.date, journal_file, nutrition_file)
-
-    if isinstance(daily_totals, dict):
-        print(f"\nTotal Nutritional Intake for {args.date}:")
-        df_totals = pd.DataFrame([daily_totals])
-        print(df_totals.T.rename(columns={0: "Total"}).to_markdown())
-    else:
-        print(daily_totals)
-
-
-if __name__ == "__main__":
-    main()
+        return total_nutrition
