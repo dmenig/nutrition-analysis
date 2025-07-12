@@ -1,22 +1,41 @@
 class Nutrient:
-    def __init__(self, data):
-        try:
-            self.calories = data["Calories / 100g"]
-            self.protein = data["Protéine"]
-            self.fat = data["Fat"]
-            self.sfat = data["SFat"]
-            self.carbs = data["Carbs"]
-            self.sugar = data["Sugar"]
-            self.free_sugar = data["Free sugar"]
-            self.fibres = data["Fibres"]
-            self.salt = data["Sel"]
-            self.alcohol = data["Alcool"]
-            self.water = data["Water"]
-            # Sodium is derived from salt (Sel). 1g of salt = 400mg of sodium.
-            self.sodium = self.salt * 400
-        except KeyError as e:
-            raise ValueError(f"Missing nutrient data: {e}")
-        self.missing_foods = []  # Track missing foods that used default values
+    def __init__(self, data, food_name=None):
+        self.__food_name = food_name
+        self.missing_foods = []
+
+        self.calories = data.get("Calories / 100g")
+        self.protein = data.get("Protéine")
+        self.fat = data.get("Fat")
+        self.sfat = data.get("SFat")
+        self.carbs = data.get("Carbs")
+        self.sugar = data.get("Sugar")
+        self.free_sugar = data.get("Free sugar")
+        self.fibres = data.get("Fibres")
+        self.salt = data.get("Sel")
+        self.alcohol = data.get("Alcool")
+        self.water = data.get("Water")
+
+        # Replace None with 0 and track missing foods
+        for attr in [
+            "calories",
+            "protein",
+            "fat",
+            "sfat",
+            "carbs",
+            "sugar",
+            "free_sugar",
+            "fibres",
+            "salt",
+            "alcohol",
+            "water",
+        ]:
+            if getattr(self, attr) is None:
+                setattr(self, attr, 0)
+                if self.__food_name:
+                    self.missing_foods.append(self.__food_name)
+
+        # Sodium is derived from salt (Sel). 1g of salt = 400mg of sodium.
+        self.sodium = self.salt * 400
 
     def __mul__(self, other):
         if isinstance(other, (int, float)):
@@ -33,7 +52,9 @@ class Nutrient:
                 "Alcool": self.alcohol * other,
                 "Water": self.water * other,
             }
-            return Nutrient(new_data)
+            new_nutrient = Nutrient(new_data, food_name=self.__food_name)
+            new_nutrient.missing_foods = self.missing_foods
+            return new_nutrient
         elif isinstance(other, Nutrient):
             # Multiplication of two Nutrient objects is not supported in this context.
             # It likely indicates a malformed formula (e.g., "food1 * food2").
@@ -59,8 +80,11 @@ class Nutrient:
                 "Alcool": self.alcohol + other.alcohol,
                 "Water": self.water + other.water,
             }
-            new_nutrient = Nutrient(new_data)
+            new_nutrient = Nutrient(new_data, food_name="Total")
             new_nutrient.sodium = self.sodium + other.sodium
+            new_nutrient.missing_foods = list(
+                set(self.missing_foods + other.missing_foods)
+            )
             return new_nutrient
         elif isinstance(other, (int, float)):
             # When adding a float, assume it's an adjustment to calories

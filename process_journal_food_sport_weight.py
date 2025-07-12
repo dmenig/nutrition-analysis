@@ -51,7 +51,7 @@ def extract_sheets_from_excel(file_path):
             journal_df.rename(
                 columns={
                     "Nourriture": "recorded food",
-                    "Pds": "ingested weight",
+                    "Pds": "weight",
                     "Sport": "sport",
                 },
                 inplace=True,
