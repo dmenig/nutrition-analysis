@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 
-def run_new_weight_model(json_file_path="data/nutrition_data.json", lambda_val=1.0):
+def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
     """
     Loads nutrition data, implements a new weight model to optimize base metabolism (B(t)),
     and saves the results to a CSV file.
@@ -17,9 +17,28 @@ def run_new_weight_model(json_file_path="data/nutrition_data.json", lambda_val=1
     with open(json_file_path, "r") as f:
         data = json.load(f)
 
+    # Find the first date with nutrient information
+    start_date = None
+    for date in sorted(data.keys()):
+        # Find the first date where "Nourriture" is a non-empty dictionary
+        # and at least one key is a plausible food name.
+        if (
+            "Nourriture" in data[date]
+            and isinstance(data[date]["Nourriture"], str)
+            and any(c.isalpha() for c in data[date]["Nourriture"])
+        ):
+            start_date = date
+            break
+
+    print(f"Start date: {start_date}")
+
     # Convert data to a pandas DataFrame
     df = pd.DataFrame.from_dict(data, orient="index")
     df.index = pd.to_datetime(df.index, errors="coerce")
+
+    # Truncate the DataFrame to start from the determined start_date
+    if start_date:
+        df = df[df.index >= pd.to_datetime(start_date)]
     df = df[df.index.notna()]  # Filter out rows where index (timestamp) is NaT
     df = df.sort_index()
 
@@ -106,7 +125,6 @@ def run_new_weight_model(json_file_path="data/nutrition_data.json", lambda_val=1
         options={
             "maxiter": 500000,  # Reset maxiter for Powell, it's derivative-free
             "ftol": 1e-6,
-            "gtol": 1e-4,
         },
     )
 
@@ -137,8 +155,12 @@ def run_new_weight_model(json_file_path="data/nutrition_data.json", lambda_val=1
             "Water_Retention": Water_Retention,
         }
     )
-    results_df.to_csv("data/new_model_results.csv", index=False)
-    print("New weight model results saved to data/new_model_results.csv")
+    results_df.to_csv("new_model_results.csv", index=False)
+    print("New weight model results saved to new_model_results.csv")
+
+
+if __name__ == "__main__":
+    run_new_weight_model()
 
 
 if __name__ == "__main__":
