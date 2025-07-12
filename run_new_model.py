@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 
-def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
+def run_new_weight_model(json_file_path="journal.json", lambda_val=1.0):
     """
     Loads nutrition data, implements a new weight model to optimize base metabolism (B(t)),
     and saves the results to a CSV file.
@@ -14,31 +14,11 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
         lambda_val (float): Hyperparameter for L2 regularization on B(t) differences.
     """
     # 1. Load and prepare time-series data
-    with open(json_file_path, "r") as f:
-        data = json.load(f)
-
-    # Find the first date with nutrient information
-    start_date = None
-    for date in sorted(data.keys()):
-        # Find the first date where "Nourriture" is a non-empty dictionary
-        # and at least one key is a plausible food name.
-        if (
-            "Nourriture" in data[date]
-            and isinstance(data[date]["Nourriture"], str)
-            and any(c.isalpha() for c in data[date]["Nourriture"])
-        ):
-            start_date = date
-            break
-
-    print(f"Start date: {start_date}")
+    df = pd.read_json(json_file_path)
 
     # Convert data to a pandas DataFrame
-    df = pd.DataFrame.from_dict(data, orient="index")
-    df.index = pd.to_datetime(df.index, errors="coerce")
-
-    # Truncate the DataFrame to start from the determined start_date
-    if start_date:
-        df = df[df.index >= pd.to_datetime(start_date)]
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.set_index("Date")
     df = df[df.index.notna()]  # Filter out rows where index (timestamp) is NaT
     df = df.sort_index()
 
@@ -73,18 +53,16 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
     # Initial guess for B(t) - can be average daily calorie expenditure or a constant
     # A simple initial guess: average (C_in - C_sport)
     # A more dynamic initial guess for B(t) based on observed weight changes
+    # Vectorized initial guess for B(t)
     initial_B = np.zeros(N)
-    # For t > 0, estimate B(t) based on observed weight change
-    # B(t) = C_in(t) - C_sport(t) - 7700 * (W_obs(t) - W_obs(t-1))
-    # Handle division by zero if W_obs(t) - W_obs(t-1) is zero, or just use previous B
-    for t in range(1, N):
-        delta_W_obs = W_obs[t] - W_obs[t - 1]
-        initial_B[t] = C_in[t] - C_sport[t] - 7700 * delta_W_obs
-
-    # For the first value, use the average of the estimated B values or a reasonable default
     if N > 1:
+        # For t > 0, estimate B(t) based on observed weight change
+        # B(t) = C_in(t) - C_sport(t) - 7700 * (W_obs(t) - W_obs(t-1))
+        delta_W_obs = np.diff(W_obs)
+        initial_B[1:] = C_in[1:] - C_sport[1:] - 7700 * delta_W_obs
+        # For the first value, use the average of the estimated B values
         initial_B[0] = np.mean(initial_B[1:])
-    else:
+    elif N == 1:
         initial_B[0] = np.mean(C_in - C_sport)  # Fallback for single data point
 
     # Ensure initial_B values are within the bounds
@@ -92,12 +70,12 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
 
     # Define the objective function to minimize
     def objective(B):
-        W_act = np.zeros(N)
-        W_act[0] = W_obs[0]  # W_act(0) = W_obs(0)
-
-        # Calculate W_act(t) based on the model equation
-        for t in range(1, N):
-            W_act[t] = W_act[t - 1] + (C_in[t] - C_sport[t] - B[t]) / 7700
+        # Vectorized calculation of W_act(t)
+        delta_W = (C_in - C_sport - B) / 7700
+        W_act = np.zeros_like(W_obs)
+        W_act[0] = W_obs[0]
+        if N > 1:
+            W_act[1:] = W_obs[0] + np.cumsum(delta_W[1:])
 
         # Calculate the sum of squared differences for observed vs actual weight
         weight_diff_sq = np.sum((W_obs - W_act) ** 2)
@@ -120,11 +98,11 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
     result = minimize(
         objective,
         initial_B,
-        method="Powell",  # Changed method to Powell
+        method="L-BFGS-B",  # Switched to L-BFGS-B for faster convergence
         bounds=bounds_B,
         options={
-            "maxiter": 500000,  # Reset maxiter for Powell, it's derivative-free
-            "ftol": 1e-6,
+            "maxiter": 2000,  # Reduced maxiter, L-BFGS-B is more efficient
+            "ftol": 1e-9,  # Tighter tolerance for function value change
         },
     )
 
@@ -135,12 +113,12 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
     B_optimized = result.x
 
     # 3. Calculate final W_act(t) and Water_Retention(t)
+    # Vectorized calculation of final W_act(t)
+    delta_W_final = (C_in - C_sport - B_optimized) / 7700
     W_act_final = np.zeros(N)
     W_act_final[0] = W_obs[0]
-    for t in range(1, N):
-        W_act_final[t] = (
-            W_act_final[t - 1] + (C_in[t] - C_sport[t] - B_optimized[t]) / 7700
-        )
+    if N > 1:
+        W_act_final[1:] = W_obs[0] + np.cumsum(delta_W_final[1:])
 
     Water_Retention = W_obs - W_act_final
 
@@ -157,11 +135,3 @@ def run_new_weight_model(json_file_path="nutrition_data.json", lambda_val=1.0):
     )
     results_df.to_csv("new_model_results.csv", index=False)
     print("New weight model results saved to new_model_results.csv")
-
-
-if __name__ == "__main__":
-    run_new_weight_model()
-
-
-if __name__ == "__main__":
-    run_new_weight_model()

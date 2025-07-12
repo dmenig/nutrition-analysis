@@ -5,9 +5,12 @@ from nutrient import Nutrient
 
 
 class FormulaParser:
-    def __init__(self, nutrition_data_path="nutrition_data.json"):
+    def __init__(self, nutrition_data_path="nutrition_values.json"):
         with open(nutrition_data_path, "r") as f:
-            self.nutrition_data = json.load(f)
+            nutrition_list = json.load(f)
+        self.nutrition_data = {
+            item["Nom"]: item for item in nutrition_list if "Nom" in item
+        }
         self.normalization_map = {
             self._normalize(k): k for k in self.nutrition_data.keys()
         }
@@ -37,20 +40,6 @@ class FormulaParser:
         # Find all words that could be food names
         all_words = set(re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", formula))
 
-        # Define a list of special terms that should not be prefixed with 'food_'
-        special_terms = {
-            "prot",
-            "creatine",
-            "eau",
-            "ksel",
-            "gainer",
-            "WEIGHT",
-            "RUNNING_CALORIES",
-            "WALKING_CALORIES",
-            "CYCLING_CALORIES",
-            "weight_lifting",
-        }
-
         food_vars_map = {}
         pythonic_formula = formula
 
@@ -58,12 +47,7 @@ class FormulaParser:
         sorted_words = sorted(list(all_words), key=len, reverse=True)
 
         for word in sorted_words:
-            if word in special_terms:
-                # If it's a special term, use it directly without 'food_' prefix
-                var_name = word
-            else:
-                # Otherwise, prefix with 'food_'
-                var_name = f"food_{word}"
+            var_name = f"food_{word}"
 
             # Replace the word in the formula with its corresponding variable name
             # Use word boundaries to avoid replacing parts of words
@@ -76,10 +60,14 @@ class FormulaParser:
 
         return pythonic_formula, food_vars_map
 
-    def calculate_nutrition_for_day(self, formula, date_str):
-        pythonic_formula = ""
-        missing_foods = []
-        pythonic_formula, food_vars_map = self._parse_and_prepare_formula(formula)
+    def calculate_nutrition_for_day(self, day_formula, date_str):
+        # Proactive check for date-like patterns in the formula
+        if re.search(r"\d{4}-\d{2}-\d{2}", day_formula):
+            raise ValueError(
+                f"Invalid formula detected: contains a date-like pattern '{day_formula}'"
+            )
+
+        pythonic_formula, food_vars_map = self._parse_and_prepare_formula(day_formula)
 
         # Create a dictionary of food items for the current formula
         eval_context = {}
@@ -90,9 +78,9 @@ class FormulaParser:
                 db_key = self.normalization_map[normalized_name]
                 eval_context[var_name] = Nutrient(self.nutrition_data[db_key])
             else:
-                # This food is not in our database, raise an error as requested
+                # This food is not in our database, raise an exception
                 raise ValueError(
-                    f"Nutrition data for food '{original_name}' (normalized: '{normalized_name}') not found in database."
+                    f"Nutrition data for food '{original_name}' (normalized: '{normalized_name}') not found."
                 )
 
         # Add Nutrient class to context to handle cases where formula starts with a nutrient, e.g. Nutrient({...})
@@ -100,12 +88,5 @@ class FormulaParser:
 
         # Evaluate the formula
         total_nutrition = eval(pythonic_formula, {"__builtins__": None}, eval_context)
-
-        # If we had missing foods, set a flag on the nutrition object
-        if missing_foods:
-            total_nutrition.missing_foods = missing_foods
-            print(
-                f"Note: Used default nutrition values for missing foods on {date_str}: {', '.join(missing_foods)}"
-            )
 
         return total_nutrition

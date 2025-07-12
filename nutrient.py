@@ -1,18 +1,21 @@
 class Nutrient:
     def __init__(self, data):
-        self.calories = data.get("Calories / 100g", 0)
-        self.protein = data.get("Protéine", 0)
-        self.fat = data.get("Fat", 0)
-        self.sfat = data.get("SFat", 0)
-        self.carbs = data.get("Carbs", 0)
-        self.sugar = data.get("Sugar", 0)
-        self.free_sugar = data.get("Free sugar", 0)
-        self.fibres = data.get("Fibres", 0)
-        self.salt = data.get("Sel", 0)
-        self.alcohol = data.get("Alcool", 0)
-        self.water = data.get("Water", 0)
-        # Sodium is derived from salt (Sel). 1g of salt = 400mg of sodium.
-        self.sodium = self.salt * 400
+        try:
+            self.calories = data["Calories / 100g"]
+            self.protein = data["Protéine"]
+            self.fat = data["Fat"]
+            self.sfat = data["SFat"]
+            self.carbs = data["Carbs"]
+            self.sugar = data["Sugar"]
+            self.free_sugar = data["Free sugar"]
+            self.fibres = data["Fibres"]
+            self.salt = data["Sel"]
+            self.alcohol = data["Alcool"]
+            self.water = data["Water"]
+            # Sodium is derived from salt (Sel). 1g of salt = 400mg of sodium.
+            self.sodium = self.salt * 400
+        except KeyError as e:
+            raise ValueError(f"Missing nutrient data: {e}")
         self.missing_foods = []  # Track missing foods that used default values
 
     def __mul__(self, other):
