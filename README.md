@@ -1,47 +1,31 @@
-# Project Overview
+# Nutrition Analysis
 
-This project is designed to analyze nutrition data and model weight changes. It calculates weight fluctuations based on calorie intake, expenditure from physical activities, and a calculated base metabolism rate.
+This project is a personal nutrition and weight analysis tool. It processes data from a journal to model and visualize weight dynamics.
 
-# File Structure
+## Features
 
-The project follows a simple directory structure:
-*   `data/`: All data files, including raw inputs and processed outputs, are located in this directory.
-*   `/`: The root directory contains all the Python scripts for processing data and running the model.
+*   Process nutrition and weight data from an Excel file.
+*   Calculate nutritional information for food consumption formulas.
+*   Model and predict weight based on calorie intake and expenditure.
+*   Estimate daily base metabolism and water retention.
+*   Generate plots to visualize weight, metabolism, and water retention trends.
+*   Search for food items in the nutritional database.
 
-# Workflow
+## Scripts
 
-Here is a step-by-step guide to running the project:
+*   **`process_journal_food_sport_weight.py`**: Extracts data from `Journal nutrition.xlsx` into `journal.json` and `nutrition_values.json`.
+*   **`run_new_model.py`**: Runs a weight prediction model using `journal.json` and outputs the results to `new_model_results.csv`.
+*   **`create_plots.py`**: Creates visualizations from `new_model_results.csv` and saves them in the `plots/` directory.
+*   **`calculate_nutrition.py`**: A utility to calculate nutritional values for a given food formula.
+*   **`search_similar_foods.py`**: A utility to search for food items in `nutrition_values.json`.
+*   **`nutrient.py`**: Defines the `Nutrient` class for nutritional calculations.
 
-*   **Step 1: Data Conversion**
-    The `convert_excel_to_json.py` script is used to convert the initial Excel data into the `nutrition_data.json` format, which is used by other scripts.
+## Workflow
 
-*   **Step 2: Data Processing**
-    The `process_journal_final.py` script processes the `journal_final.csv` file to update the `nutrition_data.json` with new entries.
+1.  Run `process_journal_food_sport_weight.py` to process the initial data.
+2.  Run `run_new_model.py` to analyze the data and generate model results.
+3.  Run `create_plots.py` to visualize the results.
 
-*   **Step 3: Manual Data Updates**
-    For manual additions or corrections, the `update_nutrition_data.py` script can be used to modify the `nutrition_data.json` file.
+## Requirements
 
-*   **Step 4: Running the Model**
-    Execute `run_new_model.py` to perform the weight analysis. This script uses the data in `nutrition_data.json` and generates the results in `new_model_results.csv`.
-
-# Key Scripts
-
-*   `convert_excel_to_json.py`: Converts Excel files to `nutrition_data.json`.
-*   `process_journal_final.py`: Processes journal data to update `nutrition_data.json`.
-*   `update_nutrition_data.py`: A utility for manual updates to `nutrition_data.json`.
-*   `run_new_model.py`: Runs the core weight model analysis.
-*   `nutrient.py`: Contains the logic for parsing nutrient information from food data.
-*   `calculate_nutrition.py`: Used for calculating nutritional values.
-*   `search_similar_foods.py`: A script to find foods with similar nutritional profiles.
-
-# Weight Model Formula
-
-The core formula used in the weight model is:
-
-`W_act(t) = W_act(t-1) + (C_in(t) - C_sport(t) - B(t)) / 7700`
-
-Where:
-*   `W_act(t)`: Actual weight at time `t`.
-*   `C_in(t)`: Total calories consumed at time `t`.
-*   `C_sport(t)`: Calories burned through sports/exercise at time `t`.
-*   `B(t)`: Base metabolism (calories burned at rest) at time `t`.
+The required Python packages are listed in `requirements.txt`.
