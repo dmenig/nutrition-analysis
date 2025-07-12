@@ -12,3 +12,10 @@ venv/
 *.DS_Store
 *.xlsx
 *.json
+# Environments
+.venv/
+
+# Data files
+*.xlsx
+*.json
+*.csv
