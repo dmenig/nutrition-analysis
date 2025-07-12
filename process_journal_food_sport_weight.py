@@ -2,55 +2,52 @@ import pandas as pd
 import json
 
 
-def process_journal_food_sport_weight_csv(file_path, chunk_size=10000):
-    print(f"Processing {file_path} in chunks of {chunk_size}...")
-    relevant_columns = []
-    data_structure_sample = {}
-    total_rows = 0
+def extract_sheets_from_excel(file_path):
+    """
+    Extracts the 'Journal' and 'Nutritional Values' sheets from an Excel file.
 
-    try:
-        for i, chunk in enumerate(pd.read_csv(file_path, chunksize=chunk_size)):
-            if i == 0:
-                # Identify relevant columns from the first chunk
-                # We are looking for 'Date', 'Weight', and potentially 'Food'/'Sport_Formula'
-                # to see if we can derive calories.
-                if "Date" in chunk.columns:
-                    relevant_columns.append("Date")
-                if "Weight" in chunk.columns:
-                    relevant_columns.append("Weight")
-                if "Food" in chunk.columns:
-                    relevant_columns.append("Food")
-                if "Sport_Formula" in chunk.columns:
-                    relevant_columns.append("Sport_Formula")
+    Args:
+        file_path (str): The path to the Excel file.
 
-                print(f"Identified relevant columns: {relevant_columns}")
+    Returns:
+        tuple: A tuple containing two DataFrames: (journal_df, nutrition_df).
+               Returns (None, None) if the sheets are not found.
+    """
+    xls = pd.ExcelFile(file_path)
+    sheet_names = xls.sheet_names
 
-                # Take a small sample of the data structure
-                if not chunk.empty:
-                    data_structure_sample = (
-                        chunk[relevant_columns].head(5).to_dict(orient="records")
-                    )
+    journal_df = None
+    nutrition_df = None
 
-            total_rows += len(chunk)
-            # In a real scenario, you would process the chunk here, e.g.,
-            # calculate calories from 'Food' and 'Sport_Formula' if needed.
-            # For this task, we are just identifying columns and structure.
+    if "Journal" in sheet_names:
+        journal_df = pd.read_excel(xls, sheet_name="Journal")
+    else:
+        print("Sheet 'Journal' not found.")
 
-        print(f"Finished processing {total_rows} rows from {file_path}.")
-        print(f"Sample data structure: {json.dumps(data_structure_sample, indent=2)}")
-        return relevant_columns, data_structure_sample, total_rows
+    if "Variables" in sheet_names:
+        nutrition_df = pd.read_excel(xls, sheet_name="Variables")
+    else:
+        print("Sheet 'Variables' not found.")
 
-    except Exception as e:
-        print(f"Error processing {file_path}: {e}")
-        return [], {}, 0
+    return journal_df, nutrition_df
 
 
 if __name__ == "__main__":
-    file_path = "journal_food_sport_weight_from_2024-06-30.csv"
-    relevant_cols, sample_data, num_rows = process_journal_food_sport_weight_csv(
-        file_path
-    )
-    print(f"\nSummary for {file_path}:")
-    print(f"  Relevant Columns: {relevant_cols}")
-    print(f"  Total Rows Processed: {num_rows}")
-    print(f"  Sample Data: {json.dumps(sample_data, indent=2)}")
+    file_path = "/home/veesion/Downloads/Journal nutrition.xlsx"
+    journal_df, nutrition_df = extract_sheets_from_excel(file_path)
+
+    if journal_df is not None:
+        print("--- Journal Data ---")
+        print(journal_df.head())
+        journal_df["Date"] = pd.to_datetime(journal_df["Date"])
+        journal_df = journal_df[journal_df["Date"] >= "2024-06-30"]
+        journal_df.to_json(
+            "journal.json", orient="records", indent=2, default_handler=str
+        )
+
+    if nutrition_df is not None:
+        print("\n--- Nutritional Values ---")
+        print(nutrition_df.head())
+        nutrition_df.to_json(
+            "nutrition_values.json", orient="records", indent=2, default_handler=str
+        )
